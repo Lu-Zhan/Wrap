@@ -20,53 +20,35 @@ struct TerminalSessionView: View {
     var body: some View {
         let sshState = currentSession?.sshService.state ?? .disconnected
 
-        NavigationStack {
-            ZStack {
-                appearance.backgroundColor.ignoresSafeArea()
+        ZStack {
+            appearance.backgroundColor.ignoresSafeArea()
 
-                switch sshState {
-                case .disconnected:
-                    connectingOverlay
-                case .connecting:
-                    connectingOverlay
-                case .connected:
-                    if let session = currentSession {
-                        terminalContent(session: session)
-                            .ignoresSafeArea(edges: .top)
-                            .safeAreaInset(edge: .bottom, spacing: 0) {
-                                inputBar(session)
-                            }
-                    }
-                case .failed(let message):
-                    failedContent(message: message)
+            switch sshState {
+            case .disconnected:
+                connectingOverlay
+            case .connecting:
+                connectingOverlay
+            case .connected:
+                if let session = currentSession {
+                    terminalContent(session: session)
+                        .ignoresSafeArea(edges: .top)
+                        .safeAreaInset(edge: .bottom, spacing: 0) {
+                            inputBar(session)
+                        }
                 }
+            case .failed(let message):
+                failedContent(message: message)
             }
-            .preferredColorScheme(.dark)
-            .persistentSystemOverlays(.hidden)
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button { dismiss() } label: {
-                        Image(systemName: "chevron.backward")
-                    }
-                }
-                ToolbarItem(placement: .topBarTrailing) {
-                    HStack(spacing: 6) {
-                        statusDot(state: sshState)
-                        Text(server.name)
-                            .font(.caption.weight(.medium))
-                            .lineLimit(1)
-                    }
-                }
+        }
+        .preferredColorScheme(.dark)
+        .persistentSystemOverlays(.hidden)
+        .overlay {
+            if sshState == .disconnected && wasConnected {
+                disconnectedOverlay
             }
-            .toolbarBackground(.hidden, for: .navigationBar)
-            .overlay {
-                if sshState == .disconnected && wasConnected {
-                    disconnectedOverlay
-                }
-            }
-            .sheet(isPresented: $showEditSheet) {
-                ServerFormView(server: server)
-            }
+        }
+        .sheet(isPresented: $showEditSheet) {
+            ServerFormView(server: server)
         }
         .task {
             server.lastConnectedAt = Date()
@@ -94,6 +76,12 @@ struct TerminalSessionView: View {
 
     private func inputBar(_ session: TerminalSession) -> some View {
         HStack(spacing: 8) {
+            Button(action: { dismiss() }) {
+                Image(systemName: "chevron.backward")
+                    .frame(width: 36, height: 48)
+                    .foregroundStyle(.primary)
+            }
+
             TextField("输入命令后点击发送...", text: $commandInput)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 8)
