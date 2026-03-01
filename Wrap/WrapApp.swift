@@ -16,9 +16,12 @@ struct WrapApp: App {
         }
     }()
 
+    @State private var sessionManager = SessionManager.shared
+
     var body: some Scene {
         WindowGroup {
             ServerListView()
+                .environment(sessionManager)
         }
         .modelContainer(sharedModelContainer)
     }

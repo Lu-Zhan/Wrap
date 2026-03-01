@@ -3,21 +3,26 @@ import SwiftUI
 struct TerminalSessionView: View {
     let server: ServerConnection
     @Environment(\.dismiss) private var dismiss
-    @State private var sshService = SSHService()
-    @State private var showDisconnectAlert = false
+    @Environment(SessionManager.self) private var sessionManager
+    @State private var currentSession: TerminalSession?
     @State private var showEditSheet = false
+    @State private var wasConnected = false
 
     var body: some View {
+        let sshState = currentSession?.sshService.state ?? .disconnected
+
         ZStack {
             Color.black.ignoresSafeArea()
 
-            switch sshService.state {
+            switch sshState {
             case .disconnected:
                 connectingOverlay
             case .connecting:
                 connectingOverlay
             case .connected:
-                terminalContent
+                if let session = currentSession {
+                    terminalContent(session: session)
+                }
             case .failed(let message):
                 failedContent(message: message)
             }
@@ -27,38 +32,26 @@ struct TerminalSessionView: View {
         .persistentSystemOverlays(.hidden)
         .toolbar(.hidden, for: .navigationBar)
         .overlay(alignment: .top) {
-            statusBar
+            statusBar(state: sshState)
         }
         .overlay {
-            if sshService.state == .disconnected && wasConnected {
+            if sshState == .disconnected && wasConnected {
                 disconnectedOverlay
             }
-        }
-        .alert("Disconnect from \(server.name)?", isPresented: $showDisconnectAlert) {
-            Button("Disconnect", role: .destructive) {
-                sshService.disconnect()
-                dismiss()
-            }
-            Button("Cancel", role: .cancel) {}
         }
         .sheet(isPresented: $showEditSheet) {
             ServerFormView(server: server)
         }
         .task {
-            await connectToServer()
+            server.lastConnectedAt = Date()
+            currentSession = await sessionManager.getOrCreateSession(for: server)
         }
     }
 
-    @State private var wasConnected = false
-
-    private var statusBar: some View {
+    private func statusBar(state: SSHService.ConnectionState) -> some View {
         HStack {
             Button {
-                if sshService.state == .connected {
-                    showDisconnectAlert = true
-                } else {
-                    dismiss()
-                }
+                dismiss()
             } label: {
                 Image(systemName: "xmark.circle.fill")
                     .font(.title2)
@@ -72,7 +65,7 @@ struct TerminalSessionView: View {
 
             Spacer()
 
-            statusIndicator
+            statusIndicator(state: state)
         }
         .padding(.horizontal)
         .padding(.vertical, 8)
@@ -80,8 +73,8 @@ struct TerminalSessionView: View {
     }
 
     @ViewBuilder
-    private var statusIndicator: some View {
-        switch sshService.state {
+    private func statusIndicator(state: SSHService.ConnectionState) -> some View {
+        switch state {
         case .connected:
             HStack(spacing: 4) {
                 Circle().fill(.green).frame(width: 8, height: 8)
@@ -105,8 +98,8 @@ struct TerminalSessionView: View {
         }
     }
 
-    private var terminalContent: some View {
-        TerminalRepresentable(sshService: sshService)
+    private func terminalContent(session: TerminalSession) -> some View {
+        TerminalRepresentable(session: session)
             .padding(.top, 44)
             .onAppear {
                 wasConnected = true
@@ -129,7 +122,7 @@ struct TerminalSessionView: View {
             Text("Could not connect to \(server.host):\(server.port)\n\n\(message)")
         } actions: {
             Button("Retry") {
-                Task { await connectToServer() }
+                Task { currentSession = await sessionManager.getOrCreateSession(for: server) }
             }
             .buttonStyle(.borderedProminent)
 
@@ -146,7 +139,7 @@ struct TerminalSessionView: View {
                 .font(.headline)
             HStack(spacing: 12) {
                 Button("Reconnect") {
-                    Task { await connectToServer() }
+                    Task { currentSession = await sessionManager.getOrCreateSession(for: server) }
                 }
                 .buttonStyle(.borderedProminent)
 
@@ -158,21 +151,5 @@ struct TerminalSessionView: View {
         }
         .padding(24)
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
-    }
-
-    private func connectToServer() async {
-        guard let password = KeychainService.load(for: server.id) else {
-            sshService.state = .failed("No credentials found. Please edit this server.")
-            return
-        }
-
-        server.lastConnectedAt = Date()
-
-        await sshService.connect(
-            host: server.host,
-            port: server.port,
-            username: server.username,
-            password: password
-        )
     }
 }

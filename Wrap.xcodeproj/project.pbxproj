@@ -6,6 +6,13 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		7449F5F82F5409F6002B233A /* SwiftTerm in Frameworks */ = {isa = PBXBuildFile; productRef = 7449F5B32F540400002B233A /* SwiftTerm */; };
+		7449F5F92F5409F6002B233A /* NIOSSH in Frameworks */ = {isa = PBXBuildFile; productRef = 7449F5B42F540400002B233A /* NIOSSH */; };
+		7449F5FA2F5409F6002B233A /* NIOCore in Frameworks */ = {isa = PBXBuildFile; productRef = 7449F5B52F540400002B233A /* NIOCore */; };
+		7449F5FB2F5409F6002B233A /* NIOPosix in Frameworks */ = {isa = PBXBuildFile; productRef = 7449F5B62F540400002B233A /* NIOPosix */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		7449F5892F540271002B233A /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -52,6 +59,10 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				7449F5FB2F5409F6002B233A /* NIOPosix in Frameworks */,
+				7449F5FA2F5409F6002B233A /* NIOCore in Frameworks */,
+				7449F5F92F5409F6002B233A /* NIOSSH in Frameworks */,
+				7449F5F82F5409F6002B233A /* SwiftTerm in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -199,15 +210,15 @@
 			);
 			mainGroup = 7449F5702F54026F002B233A;
 			minimizedProjectReferenceProxies = 1;
-			preferredProjectObjectVersion = 77;
-			productRefGroup = 7449F57A2F54026F002B233A /* Products */;
-			projectDirPath = "";
-			projectRoot = "";
 			packageReferences = (
 				7449F5B02F540400002B233A /* XCRemoteSwiftPackageReference "SwiftTerm" */,
 				7449F5B12F540400002B233A /* XCRemoteSwiftPackageReference "swift-nio-ssh" */,
 				7449F5B22F540400002B233A /* XCRemoteSwiftPackageReference "swift-nio" */,
 			);
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 7449F57A2F54026F002B233A /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
 			targets = (
 				7449F5782F54026F002B233A /* Wrap */,
 				7449F5872F540271002B233A /* WrapTests */,

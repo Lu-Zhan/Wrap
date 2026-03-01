@@ -2,7 +2,7 @@ import SwiftUI
 import SwiftTerm
 
 struct TerminalRepresentable: UIViewRepresentable {
-    let sshService: SSHService
+    let session: TerminalSession
 
     func makeUIView(context: Context) -> TerminalView {
         let terminalView = TerminalView(frame: .zero)
@@ -11,8 +11,27 @@ struct TerminalRepresentable: UIViewRepresentable {
         terminalView.nativeForegroundColor = .white
         context.coordinator.terminalView = terminalView
 
-        sshService.onData = { [weak terminalView] bytes in
+        // Double-path onData: write to scrollback + feed terminal
+        session.sshService.onData = { [weak terminalView] bytes in
+            session.appendToScrollback(bytes)
             terminalView?.feed(byteArray: bytes[...])
+        }
+
+        // Replay historical scrollback asynchronously in 64KB chunks
+        let snapshot = session.scrollbackData
+        if !snapshot.isEmpty {
+            Task { @MainActor in
+                let chunkSize = 65_536
+                var start = 0
+                while start < snapshot.count {
+                    let end = min(start + chunkSize, snapshot.count)
+                    terminalView.feed(byteArray: snapshot[start..<end])
+                    start = end
+                    if start < snapshot.count {
+                        await Task.yield()
+                    }
+                }
+            }
         }
 
         DispatchQueue.main.async {
@@ -25,23 +44,25 @@ struct TerminalRepresentable: UIViewRepresentable {
     func updateUIView(_ uiView: TerminalView, context: Context) {}
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(sshService: sshService)
+        Coordinator(session: session)
     }
 
     class Coordinator: NSObject, TerminalViewDelegate {
-        let sshService: SSHService
+        let session: TerminalSession
         weak var terminalView: TerminalView?
 
-        init(sshService: SSHService) {
-            self.sshService = sshService
+        init(session: TerminalSession) {
+            self.session = session
         }
 
         func send(source: TerminalView, data: ArraySlice<UInt8>) {
-            sshService.send(Data(data))
+            session.sshService.send(Data(data))
         }
 
         func sizeChanged(source: TerminalView, newCols: Int, newRows: Int) {
-            sshService.sendWindowChange(cols: newCols, rows: newRows)
+            session.lastKnownCols = newCols
+            session.lastKnownRows = newRows
+            session.sshService.sendWindowChange(cols: newCols, rows: newRows)
         }
 
         func scrolled(source: TerminalView, position: Double) {}

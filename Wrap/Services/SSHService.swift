@@ -144,4 +144,11 @@ final class SSHService {
             try? await group?.shutdownGracefully()
         }
     }
+
+    func sendKeepalive() {
+        guard state == .connected, let shellChannel else { return }
+        var buffer = shellChannel.allocator.buffer(capacity: 1)
+        buffer.writeBytes([0x00])
+        shellChannel.writeAndFlush(buffer, promise: nil)
+    }
 }

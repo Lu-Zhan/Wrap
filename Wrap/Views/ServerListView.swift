@@ -3,6 +3,7 @@ import SwiftData
 
 struct ServerListView: View {
     @Environment(\.modelContext) private var modelContext
+    @Environment(SessionManager.self) private var sessionManager
     @Query(sort: \ServerConnection.name) private var servers: [ServerConnection]
     @State private var searchText = ""
     @State private var showAddSheet = false
@@ -71,6 +72,22 @@ struct ServerListView: View {
                     ServerFormView(server: editingServer)
                 }
             }
+            .alert("Disconnect Session?", isPresented: Binding(
+                get: { terminatingServer != nil },
+                set: { if !$0 { terminatingServer = nil } }
+            )) {
+                Button("Disconnect", role: .destructive) {
+                    if let server = terminatingServer {
+                        sessionManager.terminateSession(for: server.id)
+                    }
+                    terminatingServer = nil
+                }
+                Button("Cancel", role: .cancel) { terminatingServer = nil }
+            } message: {
+                if let server = terminatingServer {
+                    Text("Close the active SSH session for \(server.name)?")
+                }
+            }
         }
     }
 
@@ -110,36 +127,62 @@ struct ServerListView: View {
     }
 
     private func serverRow(_ server: ServerConnection) -> some View {
-        Button {
+        let isLive = sessionManager.hasActiveSession(for: server.id)
+
+        return Button {
             selectedServer = server
         } label: {
             HStack {
-                Circle()
-                    .fill(server.lastConnectedAt != nil ? Color.green : Color.gray)
-                    .frame(width: 8, height: 8)
+                if isLive {
+                    ZStack {
+                        Circle()
+                            .stroke(Color.green, lineWidth: 1.5)
+                            .frame(width: 14, height: 14)
+                        Circle()
+                            .fill(Color.green)
+                            .frame(width: 8, height: 8)
+                    }
+                } else {
+                    Circle()
+                        .fill(server.lastConnectedAt != nil ? Color.green : Color.gray)
+                        .frame(width: 8, height: 8)
+                }
 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(server.name)
-                        .font(.body.weight(.medium))
-                        .foregroundStyle(.primary)
+                    HStack(spacing: 6) {
+                        Text(server.name)
+                            .font(.body.weight(.medium))
+                            .foregroundStyle(.primary)
+
+                        if isLive {
+                            Text("LIVE")
+                                .font(.caption2.weight(.bold))
+                                .foregroundStyle(.green)
+                                .padding(.horizontal, 4)
+                                .padding(.vertical, 1)
+                                .background(Color.green.opacity(0.15), in: RoundedRectangle(cornerRadius: 3))
+                        }
+                    }
 
                     Text("\(server.username)@\(server.host):\(server.port)")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .monospaced()
 
-                    if let lastConnected = server.lastConnectedAt {
-                        Text("Last: \(lastConnected, format: .relative(presentation: .named))")
-                            .font(.caption2)
-                            .foregroundStyle(.tertiary)
-                    } else {
-                        Text("Never connected")
-                            .font(.caption2)
-                            .foregroundStyle(.tertiary)
-                    }
                 }
 
                 Spacer()
+
+                if isLive {
+                    Button {
+                        terminatingServer = server
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.title3)
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                }
 
                 Image(systemName: "chevron.right")
                     .font(.caption)
@@ -160,6 +203,15 @@ struct ServerListView: View {
                 Label("Edit", systemImage: "pencil")
             }
             .tint(.orange)
+
+            if isLive {
+                Button {
+                    sessionManager.terminateSession(for: server.id)
+                } label: {
+                    Label("Disconnect", systemImage: "xmark.circle")
+                }
+                .tint(.red)
+            }
         }
         .contextMenu {
             Button {
@@ -183,6 +235,14 @@ struct ServerListView: View {
                 Label("Edit", systemImage: "pencil")
             }
 
+            if isLive {
+                Button(role: .destructive) {
+                    sessionManager.terminateSession(for: server.id)
+                } label: {
+                    Label("Disconnect", systemImage: "xmark.circle")
+                }
+            }
+
             Button(role: .destructive) {
                 deleteServer(server)
             } label: {
@@ -193,8 +253,10 @@ struct ServerListView: View {
 
     @State private var editingServer: ServerConnection?
     @State private var showEditSheet = false
+    @State private var terminatingServer: ServerConnection?
 
     private func deleteServer(_ server: ServerConnection) {
+        sessionManager.terminateSession(for: server.id)
         KeychainService.delete(for: server.id)
         modelContext.delete(server)
     }
