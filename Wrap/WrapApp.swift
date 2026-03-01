@@ -17,11 +17,13 @@ struct WrapApp: App {
     }()
 
     @State private var sessionManager = SessionManager.shared
+    @State private var appearance = TerminalAppearance.shared
 
     var body: some Scene {
         WindowGroup {
             ServerListView()
                 .environment(sessionManager)
+                .environment(appearance)
         }
         .modelContainer(sharedModelContainer)
     }

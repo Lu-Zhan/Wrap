@@ -7,6 +7,7 @@ struct ServerListView: View {
     @Query(sort: \ServerConnection.name) private var servers: [ServerConnection]
     @State private var searchText = ""
     @State private var showAddSheet = false
+    @State private var showSettings = false
     @State private var activeRoute: SessionRoute?
 
     // MARK: - Session route wrapper for fullScreenCover
@@ -83,6 +84,13 @@ struct ServerListView: View {
                         Image(systemName: "plus")
                     }
                 }
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
+                        showSettings = true
+                    } label: {
+                        Image(systemName: "gear")
+                    }
+                }
             }
             .sheet(isPresented: $showAddSheet) {
                 ServerFormView()
@@ -125,6 +133,9 @@ struct ServerListView: View {
                     Text("\"\(server.name)\" will be permanently removed.")
                 }
             }
+        }
+        .sheet(isPresented: $showSettings) {
+            SettingsView()
         }
     }
 

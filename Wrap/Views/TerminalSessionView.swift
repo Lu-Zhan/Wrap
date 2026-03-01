@@ -11,6 +11,7 @@ struct TerminalSessionView: View {
 
     @Environment(\.dismiss) private var dismiss
     @Environment(SessionManager.self) private var sessionManager
+    @Environment(TerminalAppearance.self) private var appearance
     @State private var currentSession: TerminalSession?
     @State private var showEditSheet = false
     @State private var wasConnected = false
@@ -20,7 +21,7 @@ struct TerminalSessionView: View {
         let sshState = currentSession?.sshService.state ?? .disconnected
 
         ZStack {
-            Color.black.ignoresSafeArea()
+            appearance.backgroundColor.ignoresSafeArea()
 
             switch sshState {
             case .disconnected:
@@ -132,7 +133,7 @@ struct TerminalSessionView: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
-        .background(.black)
+        .background(appearance.backgroundColor)
     }
 
     private func sendCommand(session: TerminalSession) {
@@ -143,7 +144,7 @@ struct TerminalSessionView: View {
     }
 
     private func terminalContent(session: TerminalSession) -> some View {
-        TerminalRepresentable(session: session)
+        TerminalRepresentable(session: session, appearance: appearance)
             .padding(.top, 44)
             .onAppear {
                 wasConnected = true

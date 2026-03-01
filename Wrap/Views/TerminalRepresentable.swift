@@ -3,12 +3,12 @@ import SwiftTerm
 
 struct TerminalRepresentable: UIViewRepresentable {
     let session: TerminalSession
+    let appearance: TerminalAppearance
 
     func makeUIView(context: Context) -> TerminalView {
         let terminalView = TerminalView(frame: .zero)
         terminalView.terminalDelegate = context.coordinator
-        terminalView.nativeBackgroundColor = .black
-        terminalView.nativeForegroundColor = .white
+        applyAppearance(terminalView)
         context.coordinator.terminalView = terminalView
 
         // Double-path onData: write to scrollback + feed terminal
@@ -41,7 +41,15 @@ struct TerminalRepresentable: UIViewRepresentable {
         return terminalView
     }
 
-    func updateUIView(_ uiView: TerminalView, context: Context) {}
+    func updateUIView(_ uiView: TerminalView, context: Context) {
+        applyAppearance(uiView)
+    }
+
+    private func applyAppearance(_ terminalView: TerminalView) {
+        terminalView.font = UIFont.monospacedSystemFont(ofSize: appearance.fontSize, weight: .regular)
+        terminalView.nativeBackgroundColor = UIColor(appearance.backgroundColor)
+        terminalView.nativeForegroundColor = UIColor(appearance.foregroundColor)
+    }
 
     func makeCoordinator() -> Coordinator {
         Coordinator(session: session)
