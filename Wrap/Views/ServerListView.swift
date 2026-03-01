@@ -90,10 +90,8 @@ struct ServerListView: View {
             .fullScreenCover(item: $activeRoute) { route in
                 TerminalSessionView(server: route.server, session: route.session)
             }
-            .sheet(isPresented: $showEditSheet) {
-                if let editingServer {
-                    ServerFormView(server: editingServer)
-                }
+            .sheet(item: $editingServer) { server in
+                ServerFormView(server: server)
             }
             .alert("Disconnect Session?", isPresented: Binding(
                 get: { terminatingSession != nil },
@@ -263,7 +261,6 @@ struct ServerListView: View {
 
             Button {
                 editingServer = server
-                showEditSheet = true
             } label: {
                 Label("Edit", systemImage: "pencil")
             }
@@ -286,7 +283,6 @@ struct ServerListView: View {
 
             Button {
                 editingServer = server
-                showEditSheet = true
             } label: {
                 Label("Edit", systemImage: "pencil")
             }
@@ -302,7 +298,6 @@ struct ServerListView: View {
     // MARK: - State + helpers
 
     @State private var editingServer: ServerConnection?
-    @State private var showEditSheet = false
     @State private var deletingServer: ServerConnection?
 
     private struct TerminatingSession {
@@ -315,14 +310,5 @@ struct ServerListView: View {
         sessionManager.terminateSession(for: server.id)
         KeychainService.delete(for: server.id)
         modelContext.delete(server)
-    }
-}
-
-extension ServerListView {
-    @ViewBuilder
-    private var editSheet: some View {
-        if showEditSheet, let server = editingServer {
-            ServerFormView(server: server)
-        }
     }
 }
