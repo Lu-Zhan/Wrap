@@ -8,6 +8,7 @@ struct TerminalRepresentable: UIViewRepresentable {
     func makeUIView(context: Context) -> TerminalView {
         let terminalView = TerminalView(frame: .zero)
         terminalView.terminalDelegate = context.coordinator
+        terminalView.contentInsetAdjustmentBehavior = .automatic
         applyAppearance(terminalView)
         context.coordinator.terminalView = terminalView
 
@@ -15,6 +16,17 @@ struct TerminalRepresentable: UIViewRepresentable {
         session.sshService.onData = { [weak terminalView] bytes in
             session.appendToScrollback(bytes)
             terminalView?.feed(byteArray: bytes[...])
+        }
+
+        // 新会话：根据 toolbar 底线高度动态计算换行数，使首行提示符出现在 toolbar 下方
+        if session.scrollbackData.isEmpty {
+            let safeTop = (UIApplication.shared.connectedScenes.first as? UIWindowScene)?
+                .windows.first?.safeAreaInsets.top ?? 47
+            let toolbarBottom = safeTop + 44 // status bar + navigation bar
+            let font = UIFont.monospacedSystemFont(ofSize: appearance.fontSize, weight: .regular)
+            let lineCount = max(1, Int(ceil(toolbarBottom / font.lineHeight)))
+            let padding: [UInt8] = Array(String(repeating: "\r\n", count: lineCount).utf8)
+            terminalView.feed(byteArray: padding[...])
         }
 
         // Replay historical scrollback asynchronously in 64KB chunks

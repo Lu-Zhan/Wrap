@@ -20,38 +20,53 @@ struct TerminalSessionView: View {
     var body: some View {
         let sshState = currentSession?.sshService.state ?? .disconnected
 
-        ZStack {
-            appearance.backgroundColor.ignoresSafeArea()
+        NavigationStack {
+            ZStack {
+                appearance.backgroundColor.ignoresSafeArea()
 
-            switch sshState {
-            case .disconnected:
-                connectingOverlay
-            case .connecting:
-                connectingOverlay
-            case .connected:
-                if let session = currentSession {
-                    terminalContent(session: session)
-                        .safeAreaInset(edge: .bottom, spacing: 0) {
-                            inputBar(session)
-                        }
+                switch sshState {
+                case .disconnected:
+                    connectingOverlay
+                case .connecting:
+                    connectingOverlay
+                case .connected:
+                    if let session = currentSession {
+                        terminalContent(session: session)
+                            .ignoresSafeArea(edges: .top)
+                            .safeAreaInset(edge: .bottom, spacing: 0) {
+                                inputBar(session)
+                            }
+                    }
+                case .failed(let message):
+                    failedContent(message: message)
                 }
-            case .failed(let message):
-                failedContent(message: message)
             }
-        }
-        .preferredColorScheme(.dark)
-        .persistentSystemOverlays(.hidden)
-        .toolbar(.hidden, for: .navigationBar)
-        .overlay(alignment: .top) {
-            statusBar(state: sshState)
-        }
-        .overlay {
-            if sshState == .disconnected && wasConnected {
-                disconnectedOverlay
+            .preferredColorScheme(.dark)
+            .persistentSystemOverlays(.hidden)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button { dismiss() } label: {
+                        Image(systemName: "chevron.backward")
+                    }
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    HStack(spacing: 6) {
+                        statusDot(state: sshState)
+                        Text(server.name)
+                            .font(.caption.weight(.medium))
+                            .lineLimit(1)
+                    }
+                }
             }
-        }
-        .sheet(isPresented: $showEditSheet) {
-            ServerFormView(server: server)
+            .toolbarBackground(.hidden, for: .navigationBar)
+            .overlay {
+                if sshState == .disconnected && wasConnected {
+                    disconnectedOverlay
+                }
+            }
+            .sheet(isPresented: $showEditSheet) {
+                ServerFormView(server: server)
+            }
         }
         .task {
             server.lastConnectedAt = Date()
@@ -63,53 +78,17 @@ struct TerminalSessionView: View {
         }
     }
 
-    private func statusBar(state: SSHService.ConnectionState) -> some View {
-        HStack {
-            Button {
-                dismiss()
-            } label: {
-                Image(systemName: "xmark.circle.fill")
-                    .font(.title2)
-                    .symbolRenderingMode(.hierarchical)
-            }
-
-            Spacer()
-
-            Text(server.name)
-                .font(.subheadline.weight(.medium))
-
-            Spacer()
-
-            statusIndicator(state: state)
-        }
-        .padding(.horizontal)
-        .padding(.vertical, 8)
-        .background(.ultraThinMaterial)
-    }
-
     @ViewBuilder
-    private func statusIndicator(state: SSHService.ConnectionState) -> some View {
+    private func statusDot(state: SSHService.ConnectionState) -> some View {
         switch state {
         case .connected:
-            HStack(spacing: 4) {
-                Circle().fill(.green).frame(width: 8, height: 8)
-                Text("Connected").font(.caption2)
-            }
+            Circle().fill(.green).frame(width: 8, height: 8)
         case .connecting:
-            HStack(spacing: 4) {
-                ProgressView().controlSize(.mini)
-                Text("Connecting...").font(.caption2)
-            }
+            ProgressView().controlSize(.mini)
         case .failed:
-            HStack(spacing: 4) {
-                Circle().fill(.red).frame(width: 8, height: 8)
-                Text("Failed").font(.caption2)
-            }
+            Circle().fill(.red).frame(width: 8, height: 8)
         case .disconnected:
-            HStack(spacing: 4) {
-                Circle().fill(.gray).frame(width: 8, height: 8)
-                Text("Disconnected").font(.caption2)
-            }
+            Circle().fill(.gray).frame(width: 8, height: 8)
         }
     }
 
@@ -145,7 +124,6 @@ struct TerminalSessionView: View {
 
     private func terminalContent(session: TerminalSession) -> some View {
         TerminalRepresentable(session: session, appearance: appearance)
-            .padding(.top, 44)
             .onAppear {
                 wasConnected = true
             }
