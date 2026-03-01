@@ -115,7 +115,7 @@ struct TerminalSessionView: View {
             Button(action: { sendCommand(session: session) }) {
                 Image(systemName: "paperplane.fill")
                     .foregroundStyle(commandInput.isEmpty ? .gray : .primary)
-                    .frame(width: 48, height: 48)
+                    .frame(width: 36, height: 48)
             }
             .disabled(commandInput.isEmpty)
         }

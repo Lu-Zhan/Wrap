@@ -19,12 +19,8 @@ struct ServerListView: View {
         }
     }
 
-    private var recentServers: [ServerConnection] {
-        filteredServers
-            .filter { $0.lastConnectedAt != nil }
-            .sorted { ($0.lastConnectedAt ?? .distantPast) > ($1.lastConnectedAt ?? .distantPast) }
-            .prefix(3)
-            .map { $0 }
+    private var activeServers: [ServerConnection] {
+        filteredServers.filter { sessionManager.hasActiveSession(for: $0.id) }
     }
 
     private var groupedServers: [(String, [ServerConnection])] {
@@ -108,10 +104,10 @@ struct ServerListView: View {
 
     private var serverList: some View {
         List {
-            if !recentServers.isEmpty {
-                Section("Recent") {
-                    ForEach(recentServers) { server in
-                        serverRow(server)
+            if !activeServers.isEmpty {
+                Section("Active") {
+                    ForEach(activeServers) { server in
+                        activeRow(server)
                     }
                 }
             }
@@ -126,25 +122,17 @@ struct ServerListView: View {
         }
     }
 
-    private func serverRow(_ server: ServerConnection) -> some View {
-        let isLive = sessionManager.hasActiveSession(for: server.id)
-
-        return Button {
+    private func activeRow(_ server: ServerConnection) -> some View {
+        Button {
             selectedServer = server
         } label: {
             HStack {
-                if isLive {
-                    ZStack {
-                        Circle()
-                            .stroke(Color.green, lineWidth: 1.5)
-                            .frame(width: 14, height: 14)
-                        Circle()
-                            .fill(Color.green)
-                            .frame(width: 8, height: 8)
-                    }
-                } else {
+                ZStack {
                     Circle()
-                        .fill(server.lastConnectedAt != nil ? Color.green : Color.gray)
+                        .stroke(Color.green, lineWidth: 1.5)
+                        .frame(width: 14, height: 14)
+                    Circle()
+                        .fill(Color.green)
                         .frame(width: 8, height: 8)
                 }
 
@@ -154,35 +142,59 @@ struct ServerListView: View {
                             .font(.body.weight(.medium))
                             .foregroundStyle(.primary)
 
-                        if isLive {
-                            Text("LIVE")
-                                .font(.caption2.weight(.bold))
-                                .foregroundStyle(.green)
-                                .padding(.horizontal, 4)
-                                .padding(.vertical, 1)
-                                .background(Color.green.opacity(0.15), in: RoundedRectangle(cornerRadius: 3))
-                        }
+                        Text("LIVE")
+                            .font(.caption2.weight(.bold))
+                            .foregroundStyle(.green)
+                            .padding(.horizontal, 4)
+                            .padding(.vertical, 1)
+                            .background(Color.green.opacity(0.15), in: RoundedRectangle(cornerRadius: 3))
                     }
 
                     Text("\(server.username)@\(server.host):\(server.port)")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .monospaced()
-
                 }
 
                 Spacer()
 
-                if isLive {
-                    Button {
-                        terminatingServer = server
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .font(.title3)
-                            .foregroundStyle(.secondary)
-                    }
-                    .buttonStyle(.plain)
+                Button {
+                    terminatingServer = server
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.title3)
+                        .foregroundStyle(.secondary)
                 }
+                .buttonStyle(.plain)
+            }
+        }
+        .swipeActions(edge: .trailing) {
+            Button {
+                sessionManager.terminateSession(for: server.id)
+            } label: {
+                Label("Disconnect", systemImage: "xmark.circle")
+            }
+            .tint(.red)
+        }
+    }
+
+    private func serverRow(_ server: ServerConnection) -> some View {
+        Button {
+            selectedServer = server
+        } label: {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(server.name)
+                        .font(.body.weight(.medium))
+                        .foregroundStyle(.primary)
+
+                    Text("\(server.username)@\(server.host):\(server.port)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .monospaced()
+                }
+
+                Spacer()
 
                 Image(systemName: "chevron.right")
                     .font(.caption)
@@ -203,15 +215,6 @@ struct ServerListView: View {
                 Label("Edit", systemImage: "pencil")
             }
             .tint(.orange)
-
-            if isLive {
-                Button {
-                    sessionManager.terminateSession(for: server.id)
-                } label: {
-                    Label("Disconnect", systemImage: "xmark.circle")
-                }
-                .tint(.red)
-            }
         }
         .contextMenu {
             Button {
@@ -233,14 +236,6 @@ struct ServerListView: View {
                 showEditSheet = true
             } label: {
                 Label("Edit", systemImage: "pencil")
-            }
-
-            if isLive {
-                Button(role: .destructive) {
-                    sessionManager.terminateSession(for: server.id)
-                } label: {
-                    Label("Disconnect", systemImage: "xmark.circle")
-                }
             }
 
             Button(role: .destructive) {
