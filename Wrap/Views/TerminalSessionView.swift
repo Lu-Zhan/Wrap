@@ -7,6 +7,7 @@ struct TerminalSessionView: View {
     @State private var currentSession: TerminalSession?
     @State private var showEditSheet = false
     @State private var wasConnected = false
+    @State private var commandInput: String = ""
 
     var body: some View {
         let sshState = currentSession?.sshService.state ?? .disconnected
@@ -22,12 +23,14 @@ struct TerminalSessionView: View {
             case .connected:
                 if let session = currentSession {
                     terminalContent(session: session)
+                        .safeAreaInset(edge: .bottom, spacing: 0) {
+                            inputBar(session)
+                        }
                 }
             case .failed(let message):
                 failedContent(message: message)
             }
         }
-        .ignoresSafeArea(.keyboard)
         .preferredColorScheme(.dark)
         .persistentSystemOverlays(.hidden)
         .toolbar(.hidden, for: .navigationBar)
@@ -96,6 +99,36 @@ struct TerminalSessionView: View {
                 Text("Disconnected").font(.caption2)
             }
         }
+    }
+
+    private func inputBar(_ session: TerminalSession) -> some View {
+        HStack(spacing: 8) {
+            TextField("输入命令后点击发送...", text: $commandInput)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
+                .background(Color(.systemGray5))
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .textInputAutocapitalization(.never)
+                .submitLabel(.send)
+                .onSubmit { sendCommand(session: session) }
+
+            Button(action: { sendCommand(session: session) }) {
+                Image(systemName: "paperplane.fill")
+                    .foregroundStyle(commandInput.isEmpty ? .gray : .primary)
+                    .frame(width: 48, height: 48)
+            }
+            .disabled(commandInput.isEmpty)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(.black)
+    }
+
+    private func sendCommand(session: TerminalSession) {
+        guard !commandInput.isEmpty else { return }
+        let text = commandInput + "\n"
+        session.sshService.send(Data(text.utf8))
+        commandInput = ""
     }
 
     private func terminalContent(session: TerminalSession) -> some View {
