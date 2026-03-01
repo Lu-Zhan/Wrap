@@ -2,6 +2,13 @@ import SwiftUI
 
 struct TerminalSessionView: View {
     let server: ServerConnection
+    let initialSession: TerminalSession?
+
+    init(server: ServerConnection, session: TerminalSession? = nil) {
+        self.server = server
+        self.initialSession = session
+    }
+
     @Environment(\.dismiss) private var dismiss
     @Environment(SessionManager.self) private var sessionManager
     @State private var currentSession: TerminalSession?
@@ -47,7 +54,11 @@ struct TerminalSessionView: View {
         }
         .task {
             server.lastConnectedAt = Date()
-            currentSession = await sessionManager.getOrCreateSession(for: server)
+            if let s = initialSession {
+                currentSession = s
+            } else {
+                currentSession = await sessionManager.createNewSession(for: server)
+            }
         }
     }
 
@@ -155,7 +166,13 @@ struct TerminalSessionView: View {
             Text("Could not connect to \(server.host):\(server.port)\n\n\(message)")
         } actions: {
             Button("Retry") {
-                Task { currentSession = await sessionManager.getOrCreateSession(for: server) }
+                Task {
+                    if let s = currentSession {
+                        await sessionManager.reconnect(s, for: server)
+                    } else {
+                        currentSession = await sessionManager.createNewSession(for: server)
+                    }
+                }
             }
             .buttonStyle(.borderedProminent)
 
@@ -172,7 +189,13 @@ struct TerminalSessionView: View {
                 .font(.headline)
             HStack(spacing: 12) {
                 Button("Reconnect") {
-                    Task { currentSession = await sessionManager.getOrCreateSession(for: server) }
+                    Task {
+                        if let s = currentSession {
+                            await sessionManager.reconnect(s, for: server)
+                        } else {
+                            currentSession = await sessionManager.createNewSession(for: server)
+                        }
+                    }
                 }
                 .buttonStyle(.borderedProminent)
 

@@ -7,7 +7,17 @@ struct ServerListView: View {
     @Query(sort: \ServerConnection.name) private var servers: [ServerConnection]
     @State private var searchText = ""
     @State private var showAddSheet = false
-    @State private var selectedServer: ServerConnection?
+    @State private var activeRoute: SessionRoute?
+
+    // MARK: - Session route wrapper for fullScreenCover
+
+    private struct SessionRoute: Identifiable {
+        let id = UUID()
+        let server: ServerConnection
+        let session: TerminalSession?
+    }
+
+    // MARK: - Filtered / grouped helpers
 
     private var filteredServers: [ServerConnection] {
         if searchText.isEmpty { return servers }
@@ -17,10 +27,6 @@ struct ServerListView: View {
                 || $0.host.lowercased().contains(query)
                 || $0.username.lowercased().contains(query)
         }
-    }
-
-    private var activeServers: [ServerConnection] {
-        filteredServers.filter { sessionManager.hasActiveSession(for: $0.id) }
     }
 
     private var groupedServers: [(String, [ServerConnection])] {
@@ -36,6 +42,27 @@ struct ServerListView: View {
             return lhs.key < rhs.key
         }
     }
+
+    /// All connected sessions whose server matches the current search filter,
+    /// sorted by creation time, with a 1-based index per server for the "(x)" suffix.
+    private var activeSessions: [(session: TerminalSession, server: ServerConnection, index: Int)] {
+        let serverMap = Dictionary(uniqueKeysWithValues: servers.map { ($0.id, $0) })
+        let filteredIDs = Set(filteredServers.map { $0.id })
+
+        let connected = sessionManager.sessions.values
+            .filter { $0.sshService.state == .connected && filteredIDs.contains($0.serverID) }
+            .sorted { $0.createdAt < $1.createdAt }
+
+        var countByServer: [UUID: Int] = [:]
+        return connected.compactMap { session in
+            guard let server = serverMap[session.serverID] else { return nil }
+            let idx = countByServer[session.serverID, default: 0] + 1
+            countByServer[session.serverID] = idx
+            return (session: session, server: server, index: idx)
+        }
+    }
+
+    // MARK: - Body
 
     var body: some View {
         NavigationStack {
@@ -60,8 +87,8 @@ struct ServerListView: View {
             .sheet(isPresented: $showAddSheet) {
                 ServerFormView()
             }
-            .fullScreenCover(item: $selectedServer) { server in
-                TerminalSessionView(server: server)
+            .fullScreenCover(item: $activeRoute) { route in
+                TerminalSessionView(server: route.server, session: route.session)
             }
             .sheet(isPresented: $showEditSheet) {
                 if let editingServer {
@@ -69,23 +96,41 @@ struct ServerListView: View {
                 }
             }
             .alert("Disconnect Session?", isPresented: Binding(
-                get: { terminatingServer != nil },
-                set: { if !$0 { terminatingServer = nil } }
+                get: { terminatingSession != nil },
+                set: { if !$0 { terminatingSession = nil } }
             )) {
                 Button("Disconnect", role: .destructive) {
-                    if let server = terminatingServer {
-                        sessionManager.terminateSession(for: server.id)
+                    if let ts = terminatingSession {
+                        sessionManager.terminateSession(sessionID: ts.session.id)
                     }
-                    terminatingServer = nil
+                    terminatingSession = nil
                 }
-                Button("Cancel", role: .cancel) { terminatingServer = nil }
+                Button("Cancel", role: .cancel) { terminatingSession = nil }
             } message: {
-                if let server = terminatingServer {
-                    Text("Close the active SSH session for \(server.name)?")
+                if let ts = terminatingSession {
+                    Text("Close the active SSH session for \(ts.server.name)?")
+                }
+            }
+            .alert("Delete Server?", isPresented: Binding(
+                get: { deletingServer != nil },
+                set: { if !$0 { deletingServer = nil } }
+            )) {
+                Button("Delete", role: .destructive) {
+                    if let server = deletingServer {
+                        deleteServer(server)
+                    }
+                    deletingServer = nil
+                }
+                Button("Cancel", role: .cancel) { deletingServer = nil }
+            } message: {
+                if let server = deletingServer {
+                    Text("\"\(server.name)\" will be permanently removed.")
                 }
             }
         }
     }
+
+    // MARK: - Empty state
 
     private var emptyState: some View {
         ContentUnavailableView {
@@ -102,19 +147,21 @@ struct ServerListView: View {
         }
     }
 
+    // MARK: - Server list
+
     private var serverList: some View {
         List {
-            if !activeServers.isEmpty {
+            if !activeSessions.isEmpty {
                 Section("Active") {
-                    ForEach(activeServers) { server in
-                        activeRow(server)
+                    ForEach(activeSessions, id: \.session.id) { item in
+                        activeRow(item.session, server: item.server, index: item.index)
                     }
                 }
             }
 
-            ForEach(groupedServers, id: \.0) { group, servers in
+            ForEach(groupedServers, id: \.0) { group, groupServers in
                 Section(group.isEmpty ? "Servers" : group) {
-                    ForEach(servers) { server in
+                    ForEach(groupServers) { server in
                         serverRow(server)
                     }
                 }
@@ -122,9 +169,13 @@ struct ServerListView: View {
         }
     }
 
-    private func activeRow(_ server: ServerConnection) -> some View {
-        Button {
-            selectedServer = server
+    // MARK: - Active row
+
+    private func activeRow(_ session: TerminalSession, server: ServerConnection, index: Int) -> some View {
+        let displayName = index > 1 ? "\(server.name) (\(index))" : server.name
+
+        return Button {
+            activeRoute = SessionRoute(server: server, session: session)
         } label: {
             HStack {
                 ZStack {
@@ -138,7 +189,7 @@ struct ServerListView: View {
 
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 6) {
-                        Text(server.name)
+                        Text(displayName)
                             .font(.body.weight(.medium))
                             .foregroundStyle(.primary)
 
@@ -159,7 +210,7 @@ struct ServerListView: View {
                 Spacer()
 
                 Button {
-                    terminatingServer = server
+                    terminatingSession = TerminatingSession(session: session, server: server)
                 } label: {
                     Image(systemName: "xmark.circle.fill")
                         .font(.title3)
@@ -170,7 +221,7 @@ struct ServerListView: View {
         }
         .swipeActions(edge: .trailing) {
             Button {
-                sessionManager.terminateSession(for: server.id)
+                sessionManager.terminateSession(sessionID: session.id)
             } label: {
                 Label("Disconnect", systemImage: "xmark.circle")
             }
@@ -178,9 +229,11 @@ struct ServerListView: View {
         }
     }
 
+    // MARK: - Server row
+
     private func serverRow(_ server: ServerConnection) -> some View {
         Button {
-            selectedServer = server
+            activeRoute = SessionRoute(server: server, session: nil)
         } label: {
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
@@ -203,7 +256,7 @@ struct ServerListView: View {
         }
         .swipeActions(edge: .trailing) {
             Button(role: .destructive) {
-                deleteServer(server)
+                deletingServer = server
             } label: {
                 Label("Delete", systemImage: "trash")
             }
@@ -239,16 +292,24 @@ struct ServerListView: View {
             }
 
             Button(role: .destructive) {
-                deleteServer(server)
+                deletingServer = server
             } label: {
                 Label("Delete", systemImage: "trash")
             }
         }
     }
 
+    // MARK: - State + helpers
+
     @State private var editingServer: ServerConnection?
     @State private var showEditSheet = false
-    @State private var terminatingServer: ServerConnection?
+    @State private var deletingServer: ServerConnection?
+
+    private struct TerminatingSession {
+        let session: TerminalSession
+        let server: ServerConnection
+    }
+    @State private var terminatingSession: TerminatingSession?
 
     private func deleteServer(_ server: ServerConnection) {
         sessionManager.terminateSession(for: server.id)

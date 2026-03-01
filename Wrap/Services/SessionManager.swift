@@ -3,7 +3,9 @@ import UIKit
 
 @Observable
 final class TerminalSession {
+    let id: UUID
     let serverID: UUID
+    let createdAt: Date
     let host: String
     let port: Int
     let username: String
@@ -18,7 +20,9 @@ final class TerminalSession {
     private static let maxScrollbackBytes = 1_048_576  // 1MB
 
     init(serverID: UUID, host: String, port: Int, username: String) {
+        self.id = UUID()
         self.serverID = serverID
+        self.createdAt = Date()
         self.host = host
         self.port = port
         self.username = username
@@ -41,6 +45,7 @@ final class TerminalSession {
 final class SessionManager {
     static let shared = SessionManager()
 
+    /// Keyed by session.id (not serverID) to support multiple sessions per server
     private(set) var sessions: [UUID: TerminalSession] = [:]
 
     private var keepaliveTimer: Timer?
@@ -54,47 +59,31 @@ final class SessionManager {
     // MARK: - Public API
 
     func hasActiveSession(for serverID: UUID) -> Bool {
-        sessions[serverID]?.sshService.state == .connected
+        sessions.values.contains { $0.serverID == serverID && $0.sshService.state == .connected }
     }
 
     func session(for serverID: UUID) -> TerminalSession? {
-        sessions[serverID]
+        sessions.values
+            .filter { $0.serverID == serverID }
+            .sorted { $0.createdAt < $1.createdAt }
+            .first
     }
 
-    func getOrCreateSession(for server: ServerConnection) async -> TerminalSession {
-        if let existing = sessions[server.id] {
-            switch existing.sshService.state {
-            case .connected:
-                return existing
-            case .connecting:
-                return existing
-            case .disconnected, .failed:
-                // Ensure clean state before reconnecting
-                existing.sshService.disconnect()
-                if let password = KeychainService.load(for: server.id) {
-                    await existing.sshService.connect(
-                        host: server.host,
-                        port: server.port,
-                        username: server.username,
-                        password: password,
-                        initialCols: existing.lastKnownCols,
-                        initialRows: existing.lastKnownRows
-                    )
-                } else {
-                    existing.sshService.state = .failed("No credentials found. Please edit this server.")
-                }
-                return existing
-            }
-        }
+    func sessions(for serverID: UUID) -> [TerminalSession] {
+        sessions.values
+            .filter { $0.serverID == serverID }
+            .sorted { $0.createdAt < $1.createdAt }
+    }
 
-        // Create new session
+    /// Always creates a brand-new SSH session for the given server.
+    func createNewSession(for server: ServerConnection) async -> TerminalSession {
         let session = TerminalSession(
             serverID: server.id,
             host: server.host,
             port: server.port,
             username: server.username
         )
-        sessions[server.id] = session
+        sessions[session.id] = session
 
         if let password = KeychainService.load(for: server.id) {
             await session.sshService.connect(
@@ -112,11 +101,44 @@ final class SessionManager {
         return session
     }
 
-    func terminateSession(for serverID: UUID) {
-        guard let session = sessions[serverID] else { return }
+    /// Reconnects a specific session that has disconnected or failed.
+    func reconnect(_ session: TerminalSession, for server: ServerConnection) async {
+        switch session.sshService.state {
+        case .connected, .connecting:
+            return
+        case .disconnected, .failed:
+            session.sshService.disconnect()
+            if let password = KeychainService.load(for: server.id) {
+                await session.sshService.connect(
+                    host: server.host,
+                    port: server.port,
+                    username: server.username,
+                    password: password,
+                    initialCols: session.lastKnownCols,
+                    initialRows: session.lastKnownRows
+                )
+            } else {
+                session.sshService.state = .failed("No credentials found. Please edit this server.")
+            }
+        }
+    }
+
+    /// Terminates one specific session by its own session ID.
+    func terminateSession(sessionID: UUID) {
+        guard let session = sessions[sessionID] else { return }
         session.sshService.disconnect()
         session.clearScrollback()
-        sessions.removeValue(forKey: serverID)
+        sessions.removeValue(forKey: sessionID)
+    }
+
+    /// Terminates all sessions for a given server (used when deleting a server).
+    func terminateSession(for serverID: UUID) {
+        let toTerminate = sessions.values.filter { $0.serverID == serverID }
+        for session in toTerminate {
+            session.sshService.disconnect()
+            session.clearScrollback()
+            sessions.removeValue(forKey: session.id)
+        }
     }
 
     func sessionMovedToBackground(for serverID: UUID) {}
